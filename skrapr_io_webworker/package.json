@@ -1,0 +1,13 @@
+{
+  "name": "skrapr_io_webworker",
+  "version": "0.0.0",
+  "description": "skrapr_io_webworker",
+  "main": "app.js",
+  "author": {
+    "name": "Oceanswave",
+    "email": ""
+  },
+  "dependencies": {
+    "phantomjs": "^1.9.17"
+  }
+}

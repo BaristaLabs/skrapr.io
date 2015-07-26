@@ -6,5 +6,10 @@
   "author": {
     "name": "Oceanswave",
     "email": ""
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1.40",
+    "download": "^4.1.4",
+    "sqs-consumer": "^2.2.0"
   }
 }
