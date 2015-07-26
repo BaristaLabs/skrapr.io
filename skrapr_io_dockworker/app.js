@@ -17,7 +17,7 @@ var app = Consumer.create({
         var urlToDownloadUrl = url.parse(urlToDownload);
         var urlToDownloadKey = urlToDownloadUrl.host + urlToDownloadUrl.pathname;
         
-        //TODO: Test if the file already exists.
+        //TODO: Test if the file already exists... but how do we do that if we get redirected?
         var checkParams = { Bucket: process.env.dockyardBucket, Key: urlToDownloadKey };
         s3.headObject(checkParams, function (err, data) {
             if (err) console.log(err, err.stack); // an error occurred
@@ -26,6 +26,7 @@ var app = Consumer.create({
         
         var gotParams = {
             method: "GET",
+            encoding: null,
             headers: {
                 "pragma": "no-cache",
                 "cache-control": "no-cache",
@@ -55,9 +56,12 @@ var app = Consumer.create({
                 }
             };
             
+            //TODO: Based on the content type, do more... e.g. if it's text/html submit to a simple crawler.
+
             var uploadOptions = { partSize: 10 * 1024 * 1024, queueSize: 1 };
             s3.upload(uploadParams, uploadOptions, function (err, data) {
                 if (err) {
+                    console.log(moment().format("MM/DD hh:mm:ss") + ": Error storing " + urlToDownload);
                     done(err);
                 }
                 else {
