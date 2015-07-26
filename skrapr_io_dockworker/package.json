@@ -10,7 +10,9 @@
   "dependencies": {
     "aws-sdk": "^2.1.40",
     "got": "^4.0.0",
+    "is-url": "^1.2.1",
     "moment": "^2.10.5",
+    "q": "^1.4.1",
     "sqs-consumer": "^2.2.0"
   }
 }

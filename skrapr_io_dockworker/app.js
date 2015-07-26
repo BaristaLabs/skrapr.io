@@ -1,29 +1,61 @@
 ﻿var Consumer = require('sqs-consumer');
 var AWS = require("aws-sdk");
-var s3 = new AWS.S3();
 var url = require("url");
 var moment = require("moment");
 var got = require("got");
+var isUrl = require("is-url");
+var Q = require("q");
 
-var app = Consumer.create({
-    queueUrl: process.env.dockyardQueueUrl,
-    handleMessage: function (message, done) {
-        console.log("=======================================");
-        console.log(moment().format("MM/DD hh:mm:ss") + ": Received Message " + message.MessageId);
+var s3 = new AWS.S3();
+var sns = new AWS.SNS({ apiVersion: '2010-03-31' });
+
+var crawlContent = function (html) {
+    
+    //TODO: Simply add the url to the main skrapr crawl queue.
+
+    //var params = {
+    //    Message: imgSrc,
+    //    TopicArn: "arn:aws:sns:us-east-1:672288119474:skrapr_io_fleet_newUrl"
+    //};
+    
+    //sns.publish(params, function (err, data) {
+    //    if (err) {
+    //        console.log(err, err.stack);
+    //    }
+    //    else {
+    //        console.log(moment().format("MM/DD hh:mm:ss") + ": Submitted url to skrape " + imgSrc);
+    //    }
+    //});
+};
+
+var getUrlKey = function (targetUrl) {
+    targetUrl = url.parse(targetUrl);
+    return targetUrl.host + targetUrl.pathname;
+};
+
+var checkIfUrlHasBeenPreviouslyRetrieved = function (targetUrl) {
+    return Q.promise(function (resolve, reject, notify) {
         
-        var headers = [];
-        var messageBody = JSON.parse(message.Body);
-        var urlToDownload = messageBody.Message;
-        var urlToDownloadUrl = url.parse(urlToDownload);
-        var urlToDownloadKey = urlToDownloadUrl.host + urlToDownloadUrl.pathname;
-        
-        //TODO: Test if the file already exists... but how do we do that if we get redirected?
-        var checkParams = { Bucket: process.env.dockyardBucket, Key: urlToDownloadKey };
+        var targetUrlKey = getUrlKey(targetUrl);
+
+        //Test if the file already exists.
+        var checkParams = { Bucket: process.env.dockyardBucket, Key: targetUrlKey };
         s3.headObject(checkParams, function (err, data) {
-            if (err) console.log(err, err.stack); // an error occurred
-            else console.log(data);           // successful response
+            if (err) {
+                if (err.statusCode === 403) //Hmm. this should be 404, but we're getting a forbidden.
+                    resolve(false);
+                else
+                    reject(err);
+            } else {
+                //We got a successful response. we're done.
+                resolve(true)
+            }
         });
-        
+    });
+};
+
+var downloadContentAtUrl = function (targetUrl) {
+    return Q.promise(function (resolve, reject, notify) {
         var gotParams = {
             method: "GET",
             encoding: null,
@@ -37,49 +69,147 @@ var app = Consumer.create({
             }
         };
         
-        got(urlToDownloadUrl, gotParams)
-            .then(function (res) {
-            console.log(moment().format("MM/DD hh:mm:ss") + ": Downloaded " + urlToDownload + " (" + res.headers['content-type'] + ") " + res.headers['content-length']);
-            
-            if (res.connection && res.connection._host)
-                urlToDownloadKey = res.client._host + urlToDownloadUrl.pathname;
-            
-            var uploadParams = {
-                Bucket: process.env.dockyardBucket,
-                Key: urlToDownloadKey,
-                Body: res.body,
-                ContentType: res.headers['content-type'],
-                Metadata: {
-                    originMessageId: message.MessageId,
-                    originUrl: urlToDownload,
-                    retrievedOn: Date.now().toString()
-                }
-            };
-            
-            //TODO: Based on the content type, do more... e.g. if it's text/html submit to a simple crawler.
-
-            var uploadOptions = { partSize: 10 * 1024 * 1024, queueSize: 1 };
-            s3.upload(uploadParams, uploadOptions, function (err, data) {
-                if (err) {
-                    console.log(moment().format("MM/DD hh:mm:ss") + ": Error storing " + urlToDownload);
-                    done(err);
-                }
-                else {
-                    console.log(moment().format("MM/DD hh:mm:ss") + ": Stored " + urlToDownload + " as " + data.Location);
-                    done();
-                }
+        var finalUrl = targetUrl;
+        var finalResponse = null;
+        var stream = got.stream(targetUrl, gotParams)
+            .on('redirect', function (response, nextOptions) {
+                console.log(moment().format("MM/DD hh:mm:ss") + ": Download Redirected to " + nextOptions.href);
+                finalUrl = nextOptions.href;
+            })
+            .on('response', function (response) {
+                console.log(moment().format("MM/DD hh:mm:ss") + ": Downloaded " + finalUrl + " (" + response.headers['content-type'] + ") " + response.headers['content-length']);
+                response.initialUrl = targetUrl,
+                response.finalUrl = finalUrl;
+                finalResponse = response;
+            })
+            .on('data', function (data) {
+                finalResponse.body = data;
+                resolve(finalResponse);
+            })
+            .on('error', function (error, body, response){
+                console.log(moment().format("MM/DD hh:mm:ss") + ": Error retrieving " + targetUrl);
+                reject(err);
             });
-        })
-            .catch(function (err) {
-            console.log(moment().format("MM/DD hh:mm:ss") + ": Error retrieving " + urlToDownload);
-            console.log(err);
-            done(err);
+    });
+};
+
+var uploadContentToDockyard = function (response, message) {
+    return Q.promise(function (resolve, reject, notify) {
+        var finalUrlKey = getUrlKey(response.finalUrl);
+
+        var uploadParams = {
+            Bucket: process.env.dockyardBucket,
+            Key: finalUrlKey,
+            Body: response.body,
+            ContentType: response.headers['content-type'],
+            Metadata: {
+                originMessageId: message.MessageId,
+                originUrl: response.initialUrl,
+                finalUrl: response.finalUrl,
+                retrievedOn: Date.now().toString()
+            }
+        };
+
+        //Upload our content to s3.
+        var uploadOptions = { partSize: 10 * 1024 * 1024, queueSize: 1 };
+        s3.upload(uploadParams, uploadOptions, function (err, data) {
+            if (err) {
+                console.log(moment().format("MM/DD hh:mm:ss") + ": Error storing " + response.finalUrl);
+                reject(err);
+            }
+            else {
+                console.log(moment().format("MM/DD hh:mm:ss") + ": Stored " + response.finalUrl + " as " + data.Location);
+                resolve(response);
+            }
         });
+    });
+};
+
+var uploadRedirectorObjectToDockyard = function (response, message) {
+    return Q.promise(function (resolve, reject, notify) {
+        var initialUrlKey = getUrlKey(response.initialUrl);
+        var finalUrlKey = getUrlKey(response.finalUrl);
+        
+        var putParams = {
+            Bucket: process.env.dockyardBucket,
+            Key: initialUrlKey,
+            Body: "",
+            ContentType: response.headers['content-type'],
+            Metadata: {
+                originMessageId: message.MessageId,
+                originUrl: response.initialUrl,
+                finalUrl: response.finalUrl,
+                retrievedOn: Date.now().toString()
+            },
+            WebsiteRedirectLocation: "/" + finalUrlKey
+        };
+        
+        s3.putObject(putParams, function (err, data) {
+            if (err) {
+                console.log(moment().format("MM/DD hh:mm:ss") + ": Error storing redirection" + initialUrlKey);
+                reject(err);
+            }
+            else {
+                console.log(moment().format("MM/DD hh:mm:ss") + ": Stored " + initialUrlKey + " as redirection to " + finalUrlKey);
+                resolve(response);
+            }
+        });
+    });
+};
+
+var app = Consumer.create({
+    queueUrl: process.env.dockyardQueueUrl,
+    handleMessage: function (message, done) {
+        console.log("=======================================");
+        console.log(moment().format("MM/DD hh:mm:ss") + ": Received Message " + message.MessageId);
+        
+        var headers = [];
+        var messageBody = JSON.parse(message.Body);
+        var targetUrl = messageBody.Message;
+
+        checkIfUrlHasBeenPreviouslyRetrieved(targetUrl)
+            .then(function (hasBeenRetrieved) {
+                if (hasBeenRetrieved) {
+                    //TODO: Improve this so we can force a re-get.
+                    console.log(moment().format("MM/DD hh:mm:ss") + ": Skipping " + targetUrl + " as it was previously retrieved.");
+                    return null;
+                } else {
+                    console.log(moment().format("MM/DD hh:mm:ss") + ": Downloading " + targetUrl);
+                    return downloadContentAtUrl(targetUrl);
+                }
+            })
+            .then(function (downloadResponse) {
+                if (downloadResponse == null)
+                    return null;
+            
+                return uploadContentToDockyard(downloadResponse, message);
+            })
+            .then(function (downloadResponse) {
+                if (downloadResponse == null)
+                    return null;
+
+                //If the final url and the initial url don't match, place a 0-byte redirector object that contains metadata about the target.
+                if (downloadResponse.initialUrl !== downloadResponse.finalUrl)
+                    return uploadRedirectorObjectToDockyard(downloadResponse, message)
+                else
+                    return downloadResponse;
+            })
+            .then(function (downloadResponse) {
+                done();
+            })
+            .catch(function (err) {
+                done(err);
+            })
+            .finally(function () {
+                console.log("=======================================");
+            })
+            .done();
     }
 });
 
 app.on('error', function (err) {
-    console.log(err.message);
+    console.log("Error:")
+    console.log("\t", err.message);
 });
 
 console.log("Listening...");
