@@ -1,0 +1,10 @@
+{
+  "name": "skrapr_io_dockworker",
+  "version": "0.0.0",
+  "description": "skrapr_io_dockworker",
+  "main": "app.js",
+  "author": {
+    "name": "Oceanswave",
+    "email": ""
+  }
+}
