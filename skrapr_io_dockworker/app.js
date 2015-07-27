@@ -5,6 +5,7 @@ var moment = require("moment");
 var got = require("got");
 var isUrl = require("is-url");
 var Q = require("q");
+var readAllStream = require('read-all-stream');
 
 var s3 = new AWS.S3();
 var sns = new AWS.SNS({ apiVersion: '2010-03-31' });
@@ -82,13 +83,19 @@ var downloadContentAtUrl = function (targetUrl) {
                 response.finalUrl = finalUrl;
                 finalResponse = response;
             })
-            .on('data', function (data) {
-                finalResponse.body = data;
-                resolve(finalResponse);
-            })
             .on('error', function (error, body, response){
                 console.log(moment().format("MM/DD hh:mm:ss") + ": Error retrieving " + targetUrl);
                 reject(err);
+            });
+
+            readAllStream(stream, null, function (err, data) {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+
+                finalResponse.body = data;
+                resolve(finalResponse)
             });
     });
 };
