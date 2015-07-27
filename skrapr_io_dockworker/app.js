@@ -219,5 +219,14 @@ app.on('error', function (err) {
     console.log("\t", err.message);
 });
 
-console.log("Listening...");
+setTimeout(function () {
+    console.log(moment().format("MM/DD hh:mm:ss") + " reconnecting...");
+    if (!app.stopped)
+        app.stop();
+    
+    app.start();
+}, 3 * 60 * 60 * 1000);
+
+console.log(moment().format("MM/DD hh:mm:ss") + " Listening...");
 app.start();
+
