@@ -1,11 +1,14 @@
 {
   "name": "skrapr_io_dockworker",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "skrapr_io_dockworker",
   "main": "app.js",
   "author": {
     "name": "Oceanswave",
     "email": ""
+  },
+  "scripts": {
+    "start": "node app.js"
   },
   "dependencies": {
     "aws-sdk": "^2.1.40",
