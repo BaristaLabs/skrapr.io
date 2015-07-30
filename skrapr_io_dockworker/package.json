@@ -7,6 +7,7 @@
     "name": "Oceanswave",
     "email": ""
   },
+  "repository": "https://github.com/BaristaLabs/skrapr.io",
   "scripts": {
     "start": "node app.js"
   },
