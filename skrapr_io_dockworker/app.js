@@ -79,13 +79,13 @@ var downloadContentAtUrl = function (targetUrl) {
             })
             .on('response', function (response) {
                 console.log(moment().format("MM/DD hh:mm:ss") + ": Downloaded " + finalUrl + " (" + response.headers['content-type'] + ") " + response.headers['content-length']);
-                response.initialUrl = targetUrl,
+                response.initialUrl = targetUrl;
                 response.finalUrl = finalUrl;
                 finalResponse = response;
             })
             .on('error', function (error, body, response){
                 console.log(moment().format("MM/DD hh:mm:ss") + ": Error retrieving " + targetUrl);
-                reject(err);
+                reject(error);
             });
 
             readAllStream(stream, null, function (err, data) {
@@ -215,7 +215,7 @@ var app = Consumer.create({
 });
 
 app.on('error', function (err) {
-    console.log("Error:")
+    console.log("Error:");
     console.log("\t", err.message);
 });
 
