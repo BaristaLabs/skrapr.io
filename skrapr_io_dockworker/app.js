@@ -219,12 +219,13 @@ app.on('error', function (err) {
     console.log("\t", err.message);
 });
 
-setTimeout(function () {
+setInterval(function () {
     console.log(moment().format("MM/DD hh:mm:ss") + " reconnecting...");
     if (!app.stopped)
         app.stop();
-    
-    app.start();
+
+    if (app.stopped)
+        app.start();
 }, 3 * 60 * 60 * 1000);
 
 console.log(moment().format("MM/DD hh:mm:ss") + " Listening...");
